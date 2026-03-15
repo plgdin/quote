@@ -32,7 +32,6 @@ const QuotationMaker: React.FC = () => {
   const pdfExportComponent = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // --- LOGIC ---
   const addItem = (): void => {
     setItems([...items, { id: Date.now().toString(), description: '', qty: 1, rate: 0 }]);
   };
@@ -55,41 +54,69 @@ const QuotationMaker: React.FC = () => {
     const container = containerRef.current;
     if (!element || !container) return;
 
-    // Temporarily reset transform for clean capture
     const originalStyle = container.style.transform;
     container.style.transform = 'none';
 
     try {
-        const canvas = await html2canvas(element, {
-            scale: 2, 
-            useCORS: true, // Crucial for images
-            allowTaint: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-            width: element.offsetWidth,
-            height: element.offsetHeight
-        });
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: "#ffffff",
+        logging: false,
+        width: element.offsetWidth,
+      });
 
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const canvasWidth = canvas.width;
+      const canvasHeight = canvas.height;
+      
+      // Calculate how many px on canvas represent one A4 page
+      const pxPerMM = canvasWidth / pdfWidth;
+      const pxPerPage = pdfHeight * pxPerMM;
+      
+      let heightLeft = canvasHeight;
+      let sY = 0; // Source Y (from canvas)
+
+      while (heightLeft > 0) {
+        // Create a temporary canvas for the current page slice
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvasWidth;
+        pageCanvas.height = Math.min(pxPerPage, heightLeft);
         
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`${docType}_${docNumber}.pdf`);
+        const ctx = pageCanvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(canvas, 0, sY, canvasWidth, pageCanvas.height, 0, 0, canvasWidth, pageCanvas.height);
+          const pageImgData = pageCanvas.toDataURL('image/png');
+          
+          if (sY > 0) pdf.addPage();
+          pdf.addImage(pageImgData, 'PNG', 0, 0, pdfWidth, (pageCanvas.height / pxPerMM));
+        }
 
-        await supabase.from('documents').insert([{
-            doc_type: docType,
-            doc_number: docNumber,
-            client_name: clientName,
-            client_address: clientAddress,
-            items: items,
-            total: calculateSubtotal()
-        }]);
+        sY += pxPerPage;
+        heightLeft -= pxPerPage;
+      }
+
+      pdf.save(`${docType}_${docNumber}.pdf`);
+
+      await supabase.from('documents').insert([{
+        doc_type: docType,
+        doc_number: docNumber,
+        client_name: clientName,
+        client_address: clientAddress,
+        items: items,
+        total: calculateSubtotal()
+      }]);
+
     } catch (err) {
-        console.error("PDF Generation failed", err);
+      console.error("PDF Generation failed", err);
     } finally {
-        container.style.transform = originalStyle;
+      container.style.transform = originalStyle;
     }
   };
 
@@ -98,7 +125,7 @@ const QuotationMaker: React.FC = () => {
       <div className="max-w-[1600px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* --- LEFT: EDITOR PANEL --- */}
-        <div className="lg:col-span-5 bg-[#1E293B] p-6 rounded-2xl shadow-2xl border border-slate-700 h-fit">
+        <div className="lg:col-span-5 bg-[#1E293B] p-6 rounded-2xl shadow-2xl border border-slate-700 h-fit sticky top-8">
           <div className="flex items-center gap-3 mb-8">
             <div className="bg-[#C5A059] p-2 rounded-lg text-black">
                 <FileText size={24} />
@@ -140,7 +167,7 @@ const QuotationMaker: React.FC = () => {
             
             <div className="pt-4">
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-4 block ml-1">Line Items</label>
-                <div className="space-y-3">
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
                     {items.map((item) => (
                     <div key={item.id} className="flex gap-2 items-center bg-[#0F172A] p-3 rounded-xl border border-slate-700">
                         <input className="flex-1 bg-transparent text-sm outline-none text-white min-w-0" 
@@ -155,9 +182,6 @@ const QuotationMaker: React.FC = () => {
                         </button>
                     </div>
                     ))}
-                    {items.length === 0 && (
-                      <p className="text-center text-slate-500 text-xs py-4 border border-dashed border-slate-700 rounded-xl italic">No items added. Click below to add.</p>
-                    )}
                 </div>
                 <button onClick={addItem} className="mt-4 flex items-center gap-2 text-xs font-black text-[#C5A059] hover:text-white uppercase tracking-widest">
                     <Plus size={14} /> Add Line Item
@@ -170,20 +194,20 @@ const QuotationMaker: React.FC = () => {
           </button>
         </div>
 
-        {/* --- RIGHT: LIVE PREVIEW (PDF TEMPLATE) --- */}
-        <div className="lg:col-span-7 flex justify-center bg-slate-900/50 rounded-3xl p-4 md:p-8 border border-slate-800 overflow-hidden">
+        {/* --- RIGHT: LIVE PREVIEW --- */}
+        <div className="lg:col-span-7 flex justify-center bg-slate-900/50 rounded-3xl p-4 md:p-8 border border-slate-800 overflow-y-auto max-h-[90vh]">
             <div ref={containerRef} className="scale-[0.45] md:scale-[0.65] xl:scale-[0.8] origin-top transition-all">
                 <div 
                     ref={pdfExportComponent} 
-                    className="bg-white text-black" 
-                    style={{ width: '210mm', height: '297mm', position: 'relative' }}
+                    className="bg-white text-black shadow-2xl" 
+                    style={{ width: '210mm', minHeight: '297mm', position: 'relative' }}
                 >
                     <div className="bg-black h-4 w-full" />
                     
-                    <div className="p-14 h-full flex flex-col">
+                    <div className="p-14 flex flex-col min-h-[297mm]">
+                        {/* HEADER */}
                         <div className="flex justify-between items-start mb-16">
                             <div className="relative">
-                                {/* FIXED LOGO SECTION */}
                                 <div className="mb-6 h-24 w-24 rounded-2xl bg-black border border-gray-100 overflow-hidden">
                                   <img 
                                     src="/logo.jpg" 
@@ -211,12 +235,14 @@ const QuotationMaker: React.FC = () => {
                             </div>
                         </div>
 
+                        {/* CLIENT INFO */}
                         <div className="mb-14">
                             <h4 className="text-[#C5A059] font-black uppercase text-[10px] mb-2 tracking-[0.2em]">Billed To:</h4>
                             <p className="font-black text-2xl text-gray-900 leading-none mb-2">{clientName || "Client Name"}</p>
                             <p className="text-gray-500 font-medium text-sm whitespace-pre-line leading-snug max-w-xs">{clientAddress || "Address"}</p>
                         </div>
 
+                        {/* TABLE */}
                         <div className="flex-grow">
                             <table className="w-full border-collapse">
                                 <thead>
@@ -228,24 +254,23 @@ const QuotationMaker: React.FC = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {items.length > 0 ? items.map((item) => (
-                                        <tr key={item.id} className="border-b border-gray-100">
+                                    {items.map((item, index) => (
+                                        <tr 
+                                          key={item.id} 
+                                          className={`border-b border-gray-100 ${index > 0 && index % 12 === 0 ? 'break-after-page' : ''}`}
+                                        >
                                             <td className="p-5 font-bold text-gray-800">{item.description || 'Service description...'}</td>
                                             <td className="p-5 text-center font-medium text-gray-500">{item.qty}</td>
                                             <td className="p-5 text-right font-medium text-gray-500">₹{item.rate.toLocaleString()}</td>
                                             <td className="p-5 text-right font-black text-gray-900">₹{(item.qty * item.rate).toLocaleString()}</td>
                                         </tr>
-                                    )) : (
-                                      <tr>
-                                        <td colSpan={4} className="p-10 text-center text-gray-300 italic">No line items specified</td>
-                                      </tr>
-                                    )}
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* BOTTOM SECTION WITH STAMP */}
-                        <div className="mt-auto flex justify-between items-end pb-10 relative">
+                        {/* TOTALS & TERMS */}
+                        <div className="mt-12 flex justify-between items-end pb-10">
                             <div className="text-[11px] text-gray-400 max-w-[300px]">
                                 <p className="font-black text-gray-800 mb-1 uppercase tracking-widest">Terms and Conditions</p>
                                 <p className="italic leading-relaxed">Please make payments within 15 days. Terms and Conditions apply, For more information or Inquiries visit plgdinn.com</p>
@@ -266,7 +291,7 @@ const QuotationMaker: React.FC = () => {
                             </div>
                         </div>
                         
-                        <div className="pt-8 border-t border-gray-100 flex justify-between items-center opacity-30">
+                        <div className="pt-8 border-t border-gray-100 flex justify-between items-center opacity-30 mt-auto">
                              <span className="text-[10px] font-bold uppercase tracking-[0.3em]">www.plgdinn.com</span>
                              <span className="text-[10px] font-medium italic">Digitally Signed Document</span>
                         </div>
