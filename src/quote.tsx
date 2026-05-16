@@ -19,6 +19,7 @@ interface Item {
   description: string;
   qty: number;
   rate: number;
+  subItems?: string[];
 }
 
 const QuotationMaker: React.FC = () => {
@@ -40,9 +41,47 @@ const QuotationMaker: React.FC = () => {
     setItems((prevItems) => prevItems.filter((item) => item.id !== id));
   };
 
-  const updateItem = (id: string, field: keyof Item, value: string | number): void => {
+  const updateItem = (id: string, field: keyof Item, value: any): void => {
     setItems((prevItems) => 
       prevItems.map((item) => (item.id === id ? { ...item, [field]: value } : item))
+    );
+  };
+
+  const addSubItem = (itemId: string): void => {
+    setItems((prevItems) =>
+      prevItems.map((item) =>
+        item.id === itemId
+          ? { ...item, subItems: [...(item.subItems || []), ''] }
+          : item
+      )
+    );
+  };
+
+  const removeSubItem = (itemId: string, subItemIndex: number): void => {
+    setItems((prevItems) =>
+      prevItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              subItems: (item.subItems || []).filter((_, i) => i !== subItemIndex),
+            }
+          : item
+      )
+    );
+  };
+
+  const updateSubItem = (itemId: string, subItemIndex: number, value: string): void => {
+    setItems((prevItems) =>
+      prevItems.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              subItems: (item.subItems || []).map((si, i) =>
+                i === subItemIndex ? value : si
+              ),
+            }
+          : item
+      )
     );
   };
 
@@ -167,19 +206,45 @@ const QuotationMaker: React.FC = () => {
             
             <div className="pt-4">
                 <label className="text-[10px] font-bold text-slate-500 uppercase mb-4 block ml-1">Line Items</label>
-                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                     {items.map((item) => (
-                    <div key={item.id} className="flex gap-2 items-center bg-[#0F172A] p-3 rounded-xl border border-slate-700">
-                        <input className="flex-1 bg-transparent text-sm outline-none text-white min-w-0" 
-                          placeholder="Item description" value={item.description} 
-                          onChange={(e) => updateItem(item.id, 'description', e.target.value)} />
-                        <input type="number" className="w-16 bg-slate-800 border-none rounded p-1 text-center text-xs text-white" 
-                          value={item.qty} onChange={(e) => updateItem(item.id, 'qty', parseInt(e.target.value) || 0)} />
-                        <input type="number" className="w-24 bg-slate-800 border-none rounded p-1 text-right text-xs text-white" 
-                          value={item.rate} onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)} />
-                        <button onClick={() => removeItem(item.id)} className="text-slate-500 hover:text-red-400 p-1 shrink-0">
-                          <Trash2 size={18} />
-                        </button>
+                    <div key={item.id} className="bg-[#0F172A] p-4 rounded-xl border border-slate-700 space-y-3">
+                        <div className="flex gap-2 items-center">
+                            <input className="flex-1 bg-transparent text-sm font-bold outline-none text-white min-w-0" 
+                              placeholder="Item description" value={item.description} 
+                              onChange={(e) => updateItem(item.id, 'description', e.target.value)} />
+                            <input type="number" className="w-16 bg-slate-800 border-none rounded p-1 text-center text-xs text-white" 
+                              value={item.qty} onChange={(e) => updateItem(item.id, 'qty', parseInt(e.target.value) || 0)} />
+                            <input type="number" className="w-24 bg-slate-800 border-none rounded p-1 text-right text-xs text-white" 
+                              value={item.rate} onChange={(e) => updateItem(item.id, 'rate', parseFloat(e.target.value) || 0)} />
+                            <button onClick={() => removeItem(item.id)} className="text-slate-500 hover:text-red-400 p-1 shrink-0">
+                              <Trash2 size={18} />
+                            </button>
+                        </div>
+                        
+                        {/* Sub-items Editor */}
+                        <div className="ml-4 space-y-2">
+                            {item.subItems?.map((subItem, idx) => (
+                                <div key={idx} className="flex gap-2 items-center">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-slate-600" />
+                                    <input 
+                                        className="flex-1 bg-transparent text-xs outline-none text-slate-400 focus:text-white"
+                                        placeholder="Sub-item description"
+                                        value={subItem}
+                                        onChange={(e) => updateSubItem(item.id, idx, e.target.value)}
+                                    />
+                                    <button onClick={() => removeSubItem(item.id, idx)} className="text-slate-600 hover:text-red-400">
+                                        <Trash2 size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                            <button 
+                                onClick={() => addSubItem(item.id)}
+                                className="text-[10px] text-slate-500 hover:text-[#C5A059] flex items-center gap-1 font-bold uppercase tracking-wider"
+                            >
+                                <Plus size={10} /> Add Sub-item
+                            </button>
+                        </div>
                     </div>
                     ))}
                 </div>
@@ -259,7 +324,19 @@ const QuotationMaker: React.FC = () => {
                                           key={item.id} 
                                           className={`border-b border-gray-100 ${index > 0 && index % 12 === 0 ? 'break-after-page' : ''}`}
                                         >
-                                            <td className="p-5 font-bold text-gray-800">{item.description || 'Service description...'}</td>
+                                            <td className="p-5 font-bold text-gray-800">
+                                                <div>{item.description || 'Service description...'}</div>
+                                                {item.subItems && item.subItems.length > 0 && (
+                                                    <div className="mt-2 space-y-1 ml-4">
+                                                        {item.subItems.map((subItem, idx) => (
+                                                            <div key={idx} className="text-xs text-gray-500 font-medium flex items-center gap-2">
+                                                                <span className="w-1 h-1 rounded-full bg-gray-300" />
+                                                                {subItem || 'Sub-item...'}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </td>
                                             <td className="p-5 text-center font-medium text-gray-500">{item.qty}</td>
                                             <td className="p-5 text-right font-medium text-gray-500">₹{item.rate.toLocaleString()}</td>
                                             <td className="p-5 text-right font-black text-gray-900">₹{(item.qty * item.rate).toLocaleString()}</td>
